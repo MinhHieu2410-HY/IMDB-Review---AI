@@ -87,7 +87,6 @@ model, vectorizer = load_model_and_vectorizer()
 
 # ----------------------- GIAO DIỆN -----------------------
 st.title("🎬 Phân tích cảm xúc Review Phim IMDB")
-st.markdown("### Model đã được **cải thiện** để hiểu tốt hơn câu đơn giản như \"I like this movie\"")
 
 user_input = st.text_area(
     "Nhập review phim:",
