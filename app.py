@@ -120,12 +120,3 @@ if st.button("Dự đoán cảm xúc", type="primary"):
                     st.error(f"😢 **Tiêu cực (Negative)**")
                     st.markdown(f"**Độ tin cậy:** {prob_negative:.1%} tiêu cực – {boosted_prob_positive:.1%} tích cực")
                 
-                # Debug (có thể tắt sau)
-                with st.expander("Xem chi tiết xử lý"):
-                    st.write("Review sau khi làm sạch:", cleaned)
-                    st.write(f"Xác suất gốc từ model: {prob_positive:.1%} positive")
-                    st.write(f"Sau khi boost: {boosted_prob_positive:.1%} positive")
-
-# Footer
-st.markdown("---")
-st.caption("Logistic Regression + Rule-based Boost • Xử lý tốt negation + từ tích cực cơ bản như 'like' • Accuracy ~90%")
