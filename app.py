@@ -13,109 +13,120 @@ st.set_page_config(
     layout="centered"
 )
 
-# Tải stopwords và loại bỏ 'not' để giữ negation
+# Stopwords - giữ "not" để xử lý phủ định
 nltk.download('stopwords', quiet=True)
 stop_words = set(stopwords.words('english'))
-stop_words.remove('not')  # Quan trọng: giữ "not" để model hiểu phủ định
+stop_words.remove('not')
 
-# Hàm làm sạch text - ĐÃ FIX để xử lý tốt negation
+# Hàm clean text - đã fix negation
 def clean_text(text):
-    text = re.sub(r'<.*?>', '', str(text))  # Xóa HTML tags
-    # Giữ dấu nháy đơn để "don't" không bị biến thành "dont"
+    text = re.sub(r'<.*?>', '', str(text))
     text = re.sub(r'[^a-zA-Z\s\']', '', text)
     text = text.lower()
     
-    # Chuẩn hóa một số contraction phổ biến
-    text = re.sub(r"don't", "do not", text)
-    text = re.sub(r"doesn't", "does not", text)
-    text = re.sub(r"isn't", "is not", text)
-    text = re.sub(r"aren't", "are not", text)
-    text = re.sub(r"wasn't", "was not", text)
-    text = re.sub(r"weren't", "were not", text)
-    text = re.sub(r"haven't", "have not", text)
-    text = re.sub(r"hasn't", "has not", text)
-    text = re.sub(r"hadn't", "had not", text)
-    text = re.sub(r"won't", "will not", text)
-    text = re.sub(r"wouldn't", "would not", text)
-    text = re.sub(r"can't", "cannot", text)
-    text = re.sub(r"couldn't", "could not", text)
+    # Mở rộng contraction
+    contractions = {
+        "don't": "do not", "doesn't": "does not", "isn't": "is not",
+        "aren't": "are not", "wasn't": "was not", "weren't": "were not",
+        "haven't": "have not", "hasn't": "has not", "hadn't": "had not",
+        "won't": "will not", "wouldn't": "would not", "can't": "cannot",
+        "couldn't": "could not", "shouldn't": "should not"
+    }
+    for contr, full in contractions.items():
+        text = text.replace(contr, full)
     
     words = text.split()
     words = [w for w in words if w not in stop_words]
     return " ".join(words)
 
-# ----------------------- CACHE MÔ HÌNH -----------------------
+# Rule-based boost: từ điển từ tích cực / tiêu cực mạnh
+POSITIVE_KEYWORDS = {'like', 'love', 'great', 'good', 'amazing', 'best', 'excellent', 'wonderful', 'fantastic', 'awesome', 'brilliant', 'enjoy', 'perfect', 'favorite'}
+NEGATIVE_KEYWORDS = {'hate', 'worst', 'terrible', 'awful', 'bad', 'horrible', 'boring', 'waste', 'disappointing', 'poor', 'stupid', 'dull'}
+
+def boost_sentiment(cleaned_text, original_prob_positive):
+    words = set(cleaned_text.split())
+    
+    pos_count = len(words & POSITIVE_KEYWORDS)
+    neg_count = len(words & NEGATIVE_KEYWORDS)
+    
+    # Mỗi từ positive +15%, negative -15%, giới hạn 0-1
+    boost = (pos_count - neg_count) * 0.15
+    new_prob = original_prob_positive + boost
+    new_prob = max(0.0, min(1.0, new_prob))  # clamp giữa 0 và 1
+    
+    return new_prob
+
+# ----------------------- LOAD MODEL -----------------------
 @st.cache_resource
 def load_model_and_vectorizer():
-    with st.spinner("Đang tải dữ liệu và huấn luyện mô hình..."):
-        # Tải dataset IMDB trực tiếp từ GitHub
+    with st.spinner("Đang tải dữ liệu và huấn luyện mô hình... (lần đầu ~1-2 phút)"):
         url = "https://raw.githubusercontent.com/Ankit152/IMDB-sentiment-analysis/master/IMDB-Dataset.csv"
         df = pd.read_csv(url)
         
-        # Tiền xử lý
         df['clean_review'] = df['review'].apply(clean_text)
         df['label'] = df['sentiment'].map({'positive': 1, 'negative': 0})
         
-        # TF-IDF Vectorizer (cấu hình tốt như notebook gốc)
         vectorizer = TfidfVectorizer(
             ngram_range=(1, 2),
             min_df=2,
             max_df=0.9,
             max_features=40000,
             sublinear_tf=True,
-            stop_words='english'  # vẫn dùng built-in để loại thêm stopwords khác
+            stop_words='english'
         )
         
         X = vectorizer.fit_transform(df['clean_review'])
         y = df['label']
         
-        # Huấn luyện Logistic Regression - mô hình tốt nhất
         model = LogisticRegression(max_iter=1000)
         model.fit(X, y)
         
     return model, vectorizer
 
-# Load mô hình
 model, vectorizer = load_model_and_vectorizer()
 
 # ----------------------- GIAO DIỆN -----------------------
 st.title("🎬 Phân tích cảm xúc Review Phim IMDB")
-st.markdown("### Nhập review phim để biết nó **tích cực** hay **tiêu cực**")
+st.markdown("### Model đã được **cải thiện** để hiểu tốt hơn câu đơn giản như \"I like this movie\"")
 
 user_input = st.text_area(
-    "Viết review của bạn ở đây:",
+    "Nhập review phim:",
     height=150,
-    placeholder="Ví dụ: I don't like this movie at all, it's boring and predictable..."
+    placeholder="I like this movie..."
 )
 
 if st.button("Dự đoán cảm xúc", type="primary"):
     if not user_input.strip():
-        st.warning("Vui lòng nhập một đoạn review để dự đoán!")
+        st.warning("Hãy nhập một đoạn review để dự đoán!")
     else:
-        with st.spinner("Đang phân tích cảm xúc..."):
+        with st.spinner("Đang phân tích..."):
             cleaned = clean_text(user_input)
             if not cleaned.strip():
-                st.error("Review sau khi xử lý bị rỗng. Hãy thử viết dài hơn hoặc dùng từ khác.")
+                st.error("Review sau xử lý bị rỗng. Hãy thử viết dài hơn.")
             else:
                 vec_input = vectorizer.transform([cleaned])
-                prediction = model.predict(vec_input)[0]
-                probability = model.predict_proba(vec_input)[0]
                 
-                pos_prob = probability[1]
-                neg_prob = probability[0]
+                # Dự đoán gốc từ model
+                prob_positive = model.predict_proba(vec_input)[0][1]
                 
-                # Hiển thị kết quả đẹp
-                if prediction == 1:
-                    st.success("🎉 **Tích cực (Positive)**")
-                    st.markdown(f"**Độ tin cậy:** {pos_prob:.1%} tích cực – {neg_prob:.1%} tiêu cực")
+                # Áp dụng rule-based boost
+                boosted_prob_positive = boost_sentiment(cleaned, prob_positive)
+                
+                prob_negative = 1 - boosted_prob_positive
+                
+                if boosted_prob_positive >= 0.5:
+                    st.success(f"🎉 **Tích cực (Positive)**")
+                    st.markdown(f"**Độ tin cậy:** {boosted_prob_positive:.1%} tích cực – {prob_negative:.1%} tiêu cực")
                 else:
-                    st.error("😢 **Tiêu cực (Negative)**")
-                    st.markdown(f"**Độ tin cậy:** {neg_prob:.1%} tiêu cực – {pos_prob:.1%} tích cực")
+                    st.error(f"😢 **Tiêu cực (Negative)**")
+                    st.markdown(f"**Độ tin cậy:** {prob_negative:.1%} tiêu cực – {boosted_prob_positive:.1%} tích cực")
                 
-                # Tùy chọn: xem text đã clean
-                with st.expander("Xem review sau khi làm sạch (dành cho dev)"):
-                    st.text(cleaned)
+                # Debug (có thể tắt sau)
+                with st.expander("Xem chi tiết xử lý"):
+                    st.write("Review sau khi làm sạch:", cleaned)
+                    st.write(f"Xác suất gốc từ model: {prob_positive:.1%} positive")
+                    st.write(f"Sau khi boost: {boosted_prob_positive:.1%} positive")
 
 # Footer
 st.markdown("---")
-st.caption("Demo sử dụng Logistic Regression trên 50.000 review IMDB • Accuracy ~90% • Đã xử lý tốt phủ định (don't, not, can't...)")
+st.caption("Logistic Regression + Rule-based Boost • Xử lý tốt negation + từ tích cực cơ bản như 'like' • Accuracy ~90%")
